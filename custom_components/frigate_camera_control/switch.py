@@ -1,6 +1,5 @@
 """Switch platform for Frigate Camera Control."""
 import logging
-import time
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -38,17 +37,10 @@ class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
         self._attr_name = f"Frigate {camera_name.title()}"
         self._attr_unique_id = f"frigate_camera_{camera_name}"
         self._attr_icon = "mdi:camera"
-        self._is_changing = False  # Prevent concurrent operations
-        self._assumed_state = None  # Track what we think the state should be
 
     @property
     def is_on(self) -> bool:
         """Return true if the camera is enabled."""
-        # If we're in the middle of changing, use assumed state
-        if self._is_changing and self._assumed_state is not None:
-            return self._assumed_state
-            
-        # Otherwise use coordinator data
         camera_data = self.coordinator.data.get(self._camera_name, {})
         return camera_data.get("enabled", True)
 
@@ -59,56 +51,17 @@ class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the camera on."""
-        if self._is_changing:
-            _LOGGER.warning(f"Camera {self._camera_name} is already being changed, ignoring")
-            return
-            
-        self._is_changing = True
-        self._assumed_state = True
-        self.async_write_ha_state()
-        
-        try:
-            success = await self.coordinator.enable_camera(self._camera_name)
-            if success:
-                _LOGGER.info(f"Successfully enabled camera {self._camera_name}")
-            else:
-                # Revert on failure
-                self._assumed_state = False
-                self.async_write_ha_state()
-                _LOGGER.error(f"Failed to enable camera {self._camera_name}")
-        finally:
-            self._is_changing = False
-            # Clear assumed state after a delay to let coordinator sync
-            self.hass.loop.call_later(5, self._clear_assumed_state)
+        _LOGGER.info(f"Turning ON camera {self._camera_name}")
+        success = await self.coordinator.set_camera_state(self._camera_name, True)
+        if not success:
+            _LOGGER.error(f"Failed to enable camera {self._camera_name}")
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn the camera off."""
-        if self._is_changing:
-            _LOGGER.warning(f"Camera {self._camera_name} is already being changed, ignoring")
-            return
-            
-        self._is_changing = True
-        self._assumed_state = False
-        self.async_write_ha_state()
-        
-        try:
-            success = await self.coordinator.disable_camera(self._camera_name)
-            if success:
-                _LOGGER.info(f"Successfully disabled camera {self._camera_name}")
-            else:
-                # Revert on failure
-                self._assumed_state = True
-                self.async_write_ha_state()
-                _LOGGER.error(f"Failed to disable camera {self._camera_name}")
-        finally:
-            self._is_changing = False
-            # Clear assumed state after a delay to let coordinator sync
-            self.hass.loop.call_later(5, self._clear_assumed_state)
-
-    def _clear_assumed_state(self):
-        """Clear the assumed state and update."""
-        self._assumed_state = None
-        self.async_write_ha_state()
+        _LOGGER.info(f"Turning OFF camera {self._camera_name}")
+        success = await self.coordinator.set_camera_state(self._camera_name, False)
+        if not success:
+            _LOGGER.error(f"Failed to disable camera {self._camera_name}")
 
     @property
     def device_info(self):
