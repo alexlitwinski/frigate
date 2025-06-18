@@ -6,16 +6,14 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.data_entry_flow import FlowResult
-import homeassistant.helpers.config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "frigate_camera_control"
 
 STEP_USER_DATA_SCHEMA = vol.Schema({
-    vol.Required("host", default="localhost"): cv.string,
-    vol.Required("port", default=5000): cv.port,
+    vol.Required("host", default="localhost"): str,
+    vol.Required("port", default=5000): int,
 })
 
 async def validate_input(hass: HomeAssistant, data: dict) -> dict:
@@ -32,20 +30,18 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict:
                 if "cameras" in config and len(config["cameras"]) > 0:
                     return {"title": f"Frigate ({host}:{port})"}
                 else:
-                    raise ConnectionError("No cameras found in Frigate configuration")
+                    raise ValueError("No cameras found in Frigate configuration")
             else:
-                raise ConnectionError(f"HTTP {response.status}")
+                raise ValueError(f"HTTP {response.status}")
     except aiohttp.ClientError as err:
-        raise ConnectionError(f"Cannot connect to Frigate: {err}")
-    except Exception as err:
-        raise ConnectionError(f"Unexpected error: {err}")
+        raise ValueError(f"Cannot connect to Frigate: {err}")
 
-class FrigateCameraControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Frigate Camera Control."""
 
     VERSION = 1
 
-    async def async_step_user(self, user_input=None) -> FlowResult:
+    async def async_step_user(self, user_input=None):
         """Handle the initial step."""
         errors = {}
         
@@ -59,7 +55,7 @@ class FrigateCameraControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 
                 return self.async_create_entry(title=info["title"], data=user_input)
             
-            except ConnectionError:
+            except ValueError:
                 _LOGGER.exception("Cannot connect to Frigate")
                 errors["base"] = "cannot_connect"
             except Exception:
