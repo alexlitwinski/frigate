@@ -52,14 +52,14 @@ class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the camera on."""
         _LOGGER.info(f"Turning ON camera {self._camera_name}")
-        success = await self.coordinator.set_camera_state(self._camera_name, True)
+        success = await self.coordinator.enable_camera(self._camera_name)
         if not success:
             _LOGGER.error(f"Failed to enable camera {self._camera_name}")
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn the camera off."""
         _LOGGER.info(f"Turning OFF camera {self._camera_name}")
-        success = await self.coordinator.set_camera_state(self._camera_name, False)
+        success = await self.coordinator.disable_camera(self._camera_name)
         if not success:
             _LOGGER.error(f"Failed to disable camera {self._camera_name}")
 
