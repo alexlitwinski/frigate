@@ -7,14 +7,15 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.data_entry_flow import FlowResult
+import homeassistant.helpers.config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "frigate_camera_control"
 
 STEP_USER_DATA_SCHEMA = vol.Schema({
-    vol.Required("host", default="localhost"): str,
-    vol.Required("port", default=5000): int,
+    vol.Required("host", default="localhost"): cv.string,
+    vol.Required("port", default=5000): cv.port,
 })
 
 async def validate_input(hass: HomeAssistant, data: dict) -> dict:
@@ -31,15 +32,15 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict:
                 if "cameras" in config and len(config["cameras"]) > 0:
                     return {"title": f"Frigate ({host}:{port})"}
                 else:
-                    raise Exception("No cameras found in Frigate configuration")
+                    raise ConnectionError("No cameras found in Frigate configuration")
             else:
-                raise Exception(f"HTTP {response.status}")
+                raise ConnectionError(f"HTTP {response.status}")
     except aiohttp.ClientError as err:
-        raise Exception(f"Cannot connect to Frigate: {err}")
+        raise ConnectionError(f"Cannot connect to Frigate: {err}")
     except Exception as err:
-        raise Exception(f"Unexpected error: {err}")
+        raise ConnectionError(f"Unexpected error: {err}")
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class FrigateCameraControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Frigate Camera Control."""
 
     VERSION = 1
@@ -58,9 +59,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 
                 return self.async_create_entry(title=info["title"], data=user_input)
             
-            except Exception as err:
-                _LOGGER.exception("Unexpected exception during setup")
+            except ConnectionError:
+                _LOGGER.exception("Cannot connect to Frigate")
                 errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected exception during setup")
+                errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id="user",
