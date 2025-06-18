@@ -74,17 +74,10 @@ class FrigateCoordinator(DataUpdateCoordinator):
         try:
             async with self.session.put(f"{self.base_url}/{camera_name}/enable") as response:
                 if response.status == 200:
-                    # Update local state immediately to prevent UI flicker
-                    if self.data and camera_name in self.data:
-                        self.data[camera_name]["enabled"] = True
-                        self.async_update_listeners()
-                    
-                    # Request refresh after a short delay to get actual state
-                    await asyncio.sleep(2)
-                    await self.async_request_refresh()
+                    _LOGGER.info(f"Camera {camera_name} enable command sent successfully")
                     return True
                 else:
-                    _LOGGER.error(f"Failed to enable camera {camera_name}: {response.status}")
+                    _LOGGER.error(f"Failed to enable camera {camera_name}: HTTP {response.status}")
                     return False
         except Exception as err:
             _LOGGER.error(f"Error enabling camera {camera_name}: {err}")
@@ -95,17 +88,10 @@ class FrigateCoordinator(DataUpdateCoordinator):
         try:
             async with self.session.put(f"{self.base_url}/{camera_name}/disable") as response:
                 if response.status == 200:
-                    # Update local state immediately to prevent UI flicker
-                    if self.data and camera_name in self.data:
-                        self.data[camera_name]["enabled"] = False
-                        self.async_update_listeners()
-                    
-                    # Request refresh after a short delay to get actual state
-                    await asyncio.sleep(2)
-                    await self.async_request_refresh()
+                    _LOGGER.info(f"Camera {camera_name} disable command sent successfully")
                     return True
                 else:
-                    _LOGGER.error(f"Failed to disable camera {camera_name}: {response.status}")
+                    _LOGGER.error(f"Failed to disable camera {camera_name}: HTTP {response.status}")
                     return False
         except Exception as err:
             _LOGGER.error(f"Error disabling camera {camera_name}: {err}")
