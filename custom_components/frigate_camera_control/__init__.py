@@ -28,28 +28,43 @@ class FrigateCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=30),
+            update_interval=timedelta(seconds=60),  # Increased interval to reduce conflicts
         )
 
     async def _async_update_data(self):
         """Fetch data from Frigate."""
         try:
-            async with self.session.get(f"{self.base_url}/config") as response:
+            # Get current status from stats endpoint (more reliable for enabled/disabled state)
+            async with self.session.get(f"{self.base_url}/stats") as response:
                 if response.status == 200:
-                    config = await response.json()
+                    stats = await response.json()
                     cameras = {}
                     
-                    # Get camera configs
-                    if "cameras" in config:
-                        for camera_name, camera_config in config["cameras"].items():
+                    # Get camera status from stats
+                    if "cameras" in stats:
+                        for camera_name, camera_stats in stats["cameras"].items():
+                            # Check if camera is actually running (detection/ffmpeg processes)
+                            detection_enabled = camera_stats.get("detection_enabled", True)
                             cameras[camera_name] = {
                                 "name": camera_name,
-                                "enabled": camera_config.get("enabled", True)
+                                "enabled": detection_enabled
                             }
+                    
+                    # Fallback to config if stats doesn't have camera info
+                    if not cameras:
+                        async with self.session.get(f"{self.base_url}/config") as config_response:
+                            if config_response.status == 200:
+                                config = await config_response.json()
+                                if "cameras" in config:
+                                    for camera_name, camera_config in config["cameras"].items():
+                                        cameras[camera_name] = {
+                                            "name": camera_name,
+                                            "enabled": camera_config.get("enabled", True)
+                                        }
                     
                     return cameras
                 else:
-                    raise UpdateFailed(f"Error fetching config: {response.status}")
+                    raise UpdateFailed(f"Error fetching stats: {response.status}")
                     
         except Exception as err:
             raise UpdateFailed(f"Error communicating with Frigate: {err}")
@@ -59,6 +74,13 @@ class FrigateCoordinator(DataUpdateCoordinator):
         try:
             async with self.session.put(f"{self.base_url}/{camera_name}/enable") as response:
                 if response.status == 200:
+                    # Update local state immediately to prevent UI flicker
+                    if self.data and camera_name in self.data:
+                        self.data[camera_name]["enabled"] = True
+                        self.async_update_listeners()
+                    
+                    # Request refresh after a short delay to get actual state
+                    await asyncio.sleep(2)
                     await self.async_request_refresh()
                     return True
                 else:
@@ -73,6 +95,13 @@ class FrigateCoordinator(DataUpdateCoordinator):
         try:
             async with self.session.put(f"{self.base_url}/{camera_name}/disable") as response:
                 if response.status == 200:
+                    # Update local state immediately to prevent UI flicker
+                    if self.data and camera_name in self.data:
+                        self.data[camera_name]["enabled"] = False
+                        self.async_update_listeners()
+                    
+                    # Request refresh after a short delay to get actual state
+                    await asyncio.sleep(2)
                     await self.async_request_refresh()
                     return True
                 else:
