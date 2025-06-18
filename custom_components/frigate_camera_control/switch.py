@@ -38,18 +38,16 @@ class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
         self._attr_name = f"Frigate {camera_name.title()}"
         self._attr_unique_id = f"frigate_camera_{camera_name}"
         self._attr_icon = "mdi:camera"
-        self._local_state = None  # Track local state changes
-        self._last_action_time = None
+        self._is_changing = False  # Prevent concurrent operations
+        self._assumed_state = None  # Track what we think the state should be
 
     @property
     def is_on(self) -> bool:
         """Return true if the camera is enabled."""
-        # If we have a recent local state change, use it temporarily
-        if (self._local_state is not None and 
-            self._last_action_time and 
-            (time.time() - self._last_action_time) < 10):
-            return self._local_state
-        
+        # If we're in the middle of changing, use assumed state
+        if self._is_changing and self._assumed_state is not None:
+            return self._assumed_state
+            
         # Otherwise use coordinator data
         camera_data = self.coordinator.data.get(self._camera_name, {})
         return camera_data.get("enabled", True)
@@ -61,39 +59,56 @@ class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the camera on."""
-        self._local_state = True
-        self._last_action_time = time.time()
+        if self._is_changing:
+            _LOGGER.warning(f"Camera {self._camera_name} is already being changed, ignoring")
+            return
+            
+        self._is_changing = True
+        self._assumed_state = True
         self.async_write_ha_state()
         
-        success = await self.coordinator.enable_camera(self._camera_name)
-        if not success:
-            # Revert local state if API call failed
-            self._local_state = False
-            self.async_write_ha_state()
-            _LOGGER.error(f"Failed to enable camera {self._camera_name}")
+        try:
+            success = await self.coordinator.enable_camera(self._camera_name)
+            if success:
+                _LOGGER.info(f"Successfully enabled camera {self._camera_name}")
+            else:
+                # Revert on failure
+                self._assumed_state = False
+                self.async_write_ha_state()
+                _LOGGER.error(f"Failed to enable camera {self._camera_name}")
+        finally:
+            self._is_changing = False
+            # Clear assumed state after a delay to let coordinator sync
+            self.hass.loop.call_later(5, self._clear_assumed_state)
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn the camera off."""
-        self._local_state = False
-        self._last_action_time = time.time()
+        if self._is_changing:
+            _LOGGER.warning(f"Camera {self._camera_name} is already being changed, ignoring")
+            return
+            
+        self._is_changing = True
+        self._assumed_state = False
         self.async_write_ha_state()
         
-        success = await self.coordinator.disable_camera(self._camera_name)
-        if not success:
-            # Revert local state if API call failed
-            self._local_state = True
-            self.async_write_ha_state()
-            _LOGGER.error(f"Failed to disable camera {self._camera_name}")
+        try:
+            success = await self.coordinator.disable_camera(self._camera_name)
+            if success:
+                _LOGGER.info(f"Successfully disabled camera {self._camera_name}")
+            else:
+                # Revert on failure
+                self._assumed_state = True
+                self.async_write_ha_state()
+                _LOGGER.error(f"Failed to disable camera {self._camera_name}")
+        finally:
+            self._is_changing = False
+            # Clear assumed state after a delay to let coordinator sync
+            self.hass.loop.call_later(5, self._clear_assumed_state)
 
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        # Clear local state after coordinator update to sync with actual state
-        if (self._last_action_time and 
-            (time.time() - self._last_action_time) > 15):
-            self._local_state = None
-            self._last_action_time = None
-        
-        super()._handle_coordinator_update()
+    def _clear_assumed_state(self):
+        """Clear the assumed state and update."""
+        self._assumed_state = None
+        self.async_write_ha_state()
 
     @property
     def device_info(self):
