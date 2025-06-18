@@ -1,5 +1,6 @@
 """Switch platform for Frigate Camera Control."""
 import logging
+import time
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -46,7 +47,7 @@ class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
         # If we have a recent local state change, use it temporarily
         if (self._local_state is not None and 
             self._last_action_time and 
-            (asyncio.get_event_loop().time() - self._last_action_time) < 10):
+            (time.time() - self._last_action_time) < 10):
             return self._local_state
         
         # Otherwise use coordinator data
@@ -61,7 +62,7 @@ class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the camera on."""
         self._local_state = True
-        self._last_action_time = asyncio.get_event_loop().time()
+        self._last_action_time = time.time()
         self.async_write_ha_state()
         
         success = await self.coordinator.enable_camera(self._camera_name)
@@ -74,7 +75,7 @@ class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs) -> None:
         """Turn the camera off."""
         self._local_state = False
-        self._last_action_time = asyncio.get_event_loop().time()
+        self._last_action_time = time.time()
         self.async_write_ha_state()
         
         success = await self.coordinator.disable_camera(self._camera_name)
@@ -88,7 +89,7 @@ class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
         """Handle updated data from the coordinator."""
         # Clear local state after coordinator update to sync with actual state
         if (self._last_action_time and 
-            (asyncio.get_event_loop().time() - self._last_action_time) > 15):
+            (time.time() - self._last_action_time) > 15):
             self._local_state = None
             self._last_action_time = None
         
