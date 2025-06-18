@@ -37,10 +37,19 @@ class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
         self._attr_name = f"Frigate {camera_name.title()}"
         self._attr_unique_id = f"frigate_camera_{camera_name}"
         self._attr_icon = "mdi:camera"
+        self._local_state = None  # Track local state changes
+        self._last_action_time = None
 
     @property
     def is_on(self) -> bool:
         """Return true if the camera is enabled."""
+        # If we have a recent local state change, use it temporarily
+        if (self._local_state is not None and 
+            self._last_action_time and 
+            (asyncio.get_event_loop().time() - self._last_action_time) < 10):
+            return self._local_state
+        
+        # Otherwise use coordinator data
         camera_data = self.coordinator.data.get(self._camera_name, {})
         return camera_data.get("enabled", True)
 
@@ -51,15 +60,39 @@ class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the camera on."""
+        self._local_state = True
+        self._last_action_time = asyncio.get_event_loop().time()
+        self.async_write_ha_state()
+        
         success = await self.coordinator.enable_camera(self._camera_name)
         if not success:
+            # Revert local state if API call failed
+            self._local_state = False
+            self.async_write_ha_state()
             _LOGGER.error(f"Failed to enable camera {self._camera_name}")
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn the camera off."""
+        self._local_state = False
+        self._last_action_time = asyncio.get_event_loop().time()
+        self.async_write_ha_state()
+        
         success = await self.coordinator.disable_camera(self._camera_name)
         if not success:
+            # Revert local state if API call failed
+            self._local_state = True
+            self.async_write_ha_state()
             _LOGGER.error(f"Failed to disable camera {self._camera_name}")
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        # Clear local state after coordinator update to sync with actual state
+        if (self._last_action_time and 
+            (asyncio.get_event_loop().time() - self._last_action_time) > 15):
+            self._local_state = None
+            self._last_action_time = None
+        
+        super()._handle_coordinator_update()
 
     @property
     def device_info(self):
