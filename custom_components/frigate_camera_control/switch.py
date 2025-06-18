@@ -21,11 +21,12 @@ async def async_setup_entry(
     
     entities = []
     
-    # Create a switch for each camera
-    for camera_name in coordinator.data:
-        entities.append(FrigateCameraSwitch(coordinator, camera_name))
+    if coordinator.data:
+        for camera_name in coordinator.data:
+            entities.append(FrigateCameraSwitch(coordinator, camera_name))
     
-    async_add_entities(entities)
+    if entities:
+        async_add_entities(entities)
 
 class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
     """Frigate camera switch."""
@@ -41,27 +42,28 @@ class FrigateCameraSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return true if the camera is enabled."""
+        if not self.available:
+            return False
+            
         camera_data = self.coordinator.data.get(self._camera_name, {})
         return camera_data.get("enabled", True)
 
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.coordinator.last_update_success and self._camera_name in self.coordinator.data
+        return (
+            self.coordinator.last_update_success and 
+            self.coordinator.data is not None and
+            self._camera_name in self.coordinator.data
+        )
 
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the camera on."""
-        _LOGGER.info(f"Turning ON camera {self._camera_name}")
-        success = await self.coordinator.enable_camera(self._camera_name)
-        if not success:
-            _LOGGER.error(f"Failed to enable camera {self._camera_name}")
+        await self.coordinator.enable_camera(self._camera_name)
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn the camera off."""
-        _LOGGER.info(f"Turning OFF camera {self._camera_name}")
-        success = await self.coordinator.disable_camera(self._camera_name)
-        if not success:
-            _LOGGER.error(f"Failed to disable camera {self._camera_name}")
+        await self.coordinator.disable_camera(self._camera_name)
 
     @property
     def device_info(self):
